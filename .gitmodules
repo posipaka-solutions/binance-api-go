@@ -1,0 +1,3 @@
+[submodule "posipaka-trade-cmn"]
+	path = posipaka-trade-cmn
+	url = git@github.com:posipaka-trade/posipaka-trade-cmn.git
