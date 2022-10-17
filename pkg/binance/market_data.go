@@ -1,12 +1,15 @@
 package binance
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/posipaka-trade/binance-api-go/internal/bncresponse"
 	"github.com/posipaka-trade/binance-api-go/internal/bncresponse/mktdata"
 	"github.com/posipaka-trade/binance-api-go/internal/pnames"
 	"github.com/posipaka-trade/posipaka-trade-cmn/exchangeapi"
 	"github.com/posipaka-trade/posipaka-trade-cmn/exchangeapi/symbol"
+	"io/ioutil"
 	"time"
 )
 
@@ -91,31 +94,40 @@ func (manager *ExchangeManager) GetAllTradingCoins() ([]symbol.Assets, error) {
 	return mktdata.GetAllTradingCoins(response)
 }
 
-func (manager *ExchangeManager) GetSymbolsBookTicker(assets []symbol.Assets) (map[string]symbol.OrderBook, error) {
-	var assetsStr string
-	for i := 0; i < len(assets); i++ {
-		if i == 0 {
-			assetsStr += "["
-		}
-		if i == len(assets)-1 {
-			assetsStr += `"` + assets[i].Base + assets[i].Quote + `"]`
-		} else {
-			assetsStr += `"` + assets[i].Base + assets[i].Quote + `",`
-		}
+func (manager *ExchangeManager) GetSymbolsBookTicker(assets ...symbol.Assets) ([]OrderBookTicker, error) {
+	assetsStr := "["
+	for _, asset := range assets {
+		assetsStr += fmt.Sprintf("\"%s%s\",", asset.Base, asset.Quote)
 	}
-	var request string
-	if assets == nil {
-		request = fmt.Sprintf("%s%s", BaseUrl, getSymbolsOrderBook)
-	} else {
+	assetsStr = assetsStr[:len(assetsStr)-1] + "]"
+
+	request := fmt.Sprintf("%s%s", BaseUrl, getSymbolsOrderBook)
+	if len(assets) != 0 {
 		request = fmt.Sprintf("%s%s?%s=%s", BaseUrl, getSymbolsOrderBook, pnames.Symbols, assetsStr)
 	}
 
+	//TODO: move all GET/POST requests to separate method with all it routine (like error check, body read, etc)
 	response, err := manager.client.Get(request)
 	if err != nil {
-		return map[string]symbol.OrderBook{}, err
+		return nil, err
 	}
-
 	defer bncresponse.CloseBody(response)
 
-	return mktdata.GetSymbolsBookTicker(response)
+	//TODO: added error code parsing from the body
+	if response.StatusCode%100 != 2 {
+		return nil, errors.New("Get orderBookTicker failed. " + response.Status)
+	}
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, errors.New("OrderBookTicker body read error. " + err.Error())
+	}
+
+	var orderBookTickerList []OrderBookTicker
+	err = json.Unmarshal(body, &orderBookTickerList)
+	if err != nil {
+		return nil, errors.New("OrderBookTicker json payload unmarshal failed. " + err.Error())
+	}
+
+	return orderBookTickerList, nil
 }
